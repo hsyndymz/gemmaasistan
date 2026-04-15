@@ -6,8 +6,20 @@ export class LocalLLMEngine {
     this.modelId = "gemma-2b-it-q4f16_1-MLC";
   }
 
+  async requestPersistence() {
+    if (navigator.storage && navigator.storage.persist) {
+      const isPersisted = await navigator.storage.persist();
+      console.log(`Storage persistence: ${isPersisted ? "enabled" : "not supported/denied"}`);
+      return isPersisted;
+    }
+    return false;
+  }
+
   async initialize(onProgress) {
     if (this.engine) return;
+
+    // Try to request persistence before initializing
+    await this.requestPersistence();
 
     this.engine = await webllm.CreateMLCEngine(this.modelId, {
       initProgressCallback: (report) => {
@@ -32,5 +44,13 @@ export class LocalLLMEngine {
       if (onUpdate) onUpdate(fullText);
     }
     return fullText;
+  }
+
+  async clearCache() {
+    if (this.engine) {
+      await this.engine.unload();
+      this.engine = null;
+    }
+    console.log("Memory cleared.");
   }
 }

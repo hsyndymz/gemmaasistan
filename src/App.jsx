@@ -17,6 +17,21 @@ const App = () => {
   const recognitionRef = useRef(null);
   const synthRef = useRef(window.speechSynthesis);
 
+  // Persistence and Previous Download Check
+  useEffect(() => {
+    const checkPersistence = async () => {
+      await engineRef.current.requestPersistence();
+    };
+    checkPersistence();
+
+    // Check if model was already downloaded
+    const hasDownloaded = localStorage.getItem('gemma_downloaded') === 'true';
+    if (hasDownloaded) {
+      setIsReady(false); // Still need to init, but can show "Ready to load"
+      setStatus('Model önbellekte hazır. Başlatmak için dokunun.');
+    }
+  }, []);
+
   // Initialize Speech Recognition
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -57,6 +72,11 @@ const App = () => {
       await engineRef.current.initialize((progress, text) => {
         setLoadProgress(Math.round(progress * 100));
         setLoadingText(text);
+        
+        // Mark as downloaded if we reach 100% or significant progress
+        if (progress >= 1.0) {
+          localStorage.setItem('gemma_downloaded', 'true');
+        }
       });
       setIsReady(true);
       setIsModelLoading(false);
@@ -64,8 +84,20 @@ const App = () => {
       speak("Gemma hazır. Size nasıl yardımcı olabilirim?");
     } catch (error) {
       console.error(error);
-      setStatus('Hata: Model yüklenemedi. WebGPU desteğini kontrol edin.');
+      if (error.message?.includes('Quota')) {
+        setStatus('Hata: Depolama alanı yetersiz (Safari Sınırı).');
+      } else {
+        setStatus('Hata: Model yüklenemedi. Sayfayı yenileyip tekrar deneyin.');
+      }
       setIsModelLoading(false);
+    }
+  };
+
+  const clearCache = async () => {
+    if (confirm('Model önbelleğini temizlemek istediğinize emin misiniz? (1.5GB alan açılır)')) {
+      await engineRef.current.clearCache();
+      localStorage.removeItem('gemma_downloaded');
+      window.location.reload();
     }
   };
 
@@ -168,9 +200,13 @@ const App = () => {
           )}
 
           {(!isReady && !isModelLoading) && (
-            <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+            <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
               <Download color="#fff" size={40} opacity={0.5} />
-              <span style={{ color: '#fff', fontSize: '0.9rem', opacity: 0.7 }}>Yüklemek için Dokun (1.5GB)</span>
+              <span style={{ color: '#fff', fontSize: '0.9rem', opacity: 0.7, textAlign: 'center', padding: '0 20px' }}>
+                {localStorage.getItem('gemma_downloaded') === 'true' 
+                  ? 'Model Önbellekte. Başlatmak için Dokun.' 
+                  : 'Yüklemek için Dokun (1.5GB)'}
+              </span>
             </div>
           )}
         </div>
@@ -181,6 +217,27 @@ const App = () => {
         <p className="status-text" style={{ textAlign: 'center', maxWidth: '80%' }}>
           {isModelLoading ? loadingText : status}
         </p>
+
+        {(!isReady && !isModelLoading && !localStorage.getItem('gemma_downloaded')) && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            style={{ 
+              marginTop: '1rem', 
+              padding: '10px 20px', 
+              borderRadius: '12px', 
+              background: 'rgba(255,165,0,0.1)', 
+              border: '1px solid rgba(255,165,0,0.2)',
+              fontSize: '0.8rem',
+              color: '#ffa500',
+              textAlign: 'center',
+              maxWidth: '80%'
+            }}
+          >
+            <Info size={14} style={{ marginBottom: '4px' }} /><br/>
+            Safari kullanıcıları: Donma yaşamamak için lütfen uygulamayı <b>"Ana Ekrana Ekle"</b> yaparak kullanın.
+          </motion.div>
+        )}
 
         <div className="transcript-area">
           <AnimatePresence mode="wait">
@@ -208,7 +265,7 @@ const App = () => {
         </div>
       </main>
 
-      <footer style={{ marginBottom: '3rem', width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <footer style={{ marginBottom: '2rem', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -240,12 +297,28 @@ const App = () => {
               <>
                 {isReady ? <Mic color="#fff" /> : <Download color="#fff" />}
                 <span style={{ fontWeight: 600 }}>
-                  {isReady ? 'Konuşmaya Başla' : 'Motoru Hazırla'}
+                  {isReady ? 'Konuşmaya Başla' : (localStorage.getItem('gemma_downloaded') === 'true' ? 'Motoru Başlat' : 'Motoru Hazırla')}
                 </span>
               </>
             )
           )}
         </motion.button>
+
+        {localStorage.getItem('gemma_downloaded') === 'true' && !isModelLoading && (
+          <button 
+            onClick={clearCache}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'rgba(255,255,255,0.3)', 
+              fontSize: '0.7rem', 
+              textDecoration: 'underline',
+              cursor: 'pointer'
+            }}
+          >
+            Önbelleği Temizle (1.5GB)
+          </button>
+        )}
       </footer>
     </div>
   );
